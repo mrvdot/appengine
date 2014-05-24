@@ -47,15 +47,17 @@ func GenerateUniqueSlug(ctx appengine.Context, kind string, s string) (slug stri
 
 // Save takes an appengine.Context and an struct (or pointer to struct) to save in the datastore
 // Uses reflection to validate obj is able to be saved. Additionally checks for:
-// - Method 'BeforeSave' that receives appengine.Context as it's first parameter
+//
+// * Method 'BeforeSave' that receives appengine.Context as it's first parameter
 //   This can be used for any on save actions that need to be performed (generate a slug, store LastUpdated, or create Key field (see below))
-// - Field 'Key' of kind *datastore.Key. If exists and has a valid key, uses that for storing in datastore
+// * Field 'Key' of kind *datastore.Key. If exists and has a valid key, uses that for storing in datastore
 // 	 ** Important. Due to datastore limitations, this field must not actually be stored in the datastore (ie, needs struct tag `datastore:"-")
-// - Field 'ID' of kind int64 to be used as the numeric ID for a datastore key
+// * Field 'ID' of kind int64 to be used as the numeric ID for a datastore key
 //	 If key was not retrieved from Key field, ID field is used to create a new key based on that ID
 //	 If struct has ID field but no value for it, Save allocates an ID from the datastore and sets it in that field before saving
-// - Method 'AfterSave' that receives appengine.Context and *datastore.Key as it's parameters
+// * Method 'AfterSave' that receives appengine.Context and *datastore.Key as it's parameters
 //   Useful for any post save processing that you might want to do
+//
 // Finally, ID and Key fields (if they exist) are set with any generated values from Saving obj
 func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error) {
 	kind, val := reflect.TypeOf(obj), reflect.ValueOf(obj)
