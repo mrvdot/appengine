@@ -26,11 +26,13 @@ func (s *MySuite) TestGetAccountFromSlug(c *C) {
 // This test authenticates an account, validates that a session was created,
 // and then that we can retreive the original account via that session
 func (s *MySuite) TestAuthentication(c *C) {
-	session, err := authenticateAccount(ctx, validAccount.Slug, validAccount.ApiKey)
+	account, err := authenticateAccount(ctx, validAccount.Slug, validAccount.ApiKey)
 	c.Assert(err, IsNil)
-	sessionKey := session.Key
-	acct, session2, err := authenticateSession(ctx, sessionKey)
+	c.Assert(account.Slug, Equals, validAccount.Slug)
+	session, err := GetSession(ctx)
+	c.Assert(err, IsNil)
+	account2, session2, err := authenticateSession(ctx, session.Key)
 	c.Assert(err, IsNil)
 	c.Assert(session, DeepEquals, session2)
-	c.Assert(acct.Slug, Equals, validAccount.Slug)
+	c.Assert(account, DeepEquals, account2)
 }

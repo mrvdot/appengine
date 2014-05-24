@@ -1,5 +1,5 @@
-//Package account handles all authentication and
-//account scoping for tests/decisions/calculations
+// Package account handles the authentication and
+// account creation flow for APIs
 package accounts
 
 import (
@@ -14,7 +14,7 @@ import (
 	"appengine/memcache"
 )
 
-// func AuthenticateRequest takes an http.Request and validates it against existing accounts and sessions
+// AuthenticateRequest takes an http.Request and validates it against existing accounts and sessions
 // Checks first for an account slug, then falls back on acct session key if slug is not present
 // Returns an account (if valid) or error if unable to find acct matching account
 func AuthenticateRequest(req *http.Request) (*Account, error) {
@@ -32,7 +32,7 @@ func AuthenticateRequest(req *http.Request) (*Account, error) {
 	return authenticateAccount(ctx, slug, apiKey)
 }
 
-// func authenticateAccount takes acct accountId and key, authenticates it,
+// authenticateAccount takes acct accountId and key, authenticates it,
 // returning acct session if valid, or error if invalid
 // Also stores valid within authenticatedAccounts for later retrieval via authenticateSessions
 func authenticateAccount(ctx appengine.Context, accountSlug, accountKey string) (*Account, error) {
@@ -49,7 +49,7 @@ func authenticateAccount(ctx appengine.Context, accountSlug, accountKey string) 
 	return acct, nil
 }
 
-// func authenticateSession takes acct session key and validates it
+// authenticateSession takes account session key and validates it
 func authenticateSession(ctx appengine.Context, sessionKey string) (acct *Account, session *Session, err error) {
 	session, err = getSession(ctx, sessionKey)
 	if err != nil {
@@ -68,7 +68,7 @@ func authenticateSession(ctx appengine.Context, sessionKey string) (acct *Accoun
 	return acct, session, nil
 }
 
-// func GetAccount returns the currently authenticated account, or an error if no account
+// GetAccount returns the currently authenticated account, or an error if no account
 // has been authenticated for this request
 func GetAccount(ctx appengine.Context) (*Account, error) {
 	reqId := appengine.RequestID(ctx)
@@ -78,7 +78,7 @@ func GetAccount(ctx appengine.Context) (*Account, error) {
 	return nil, Unauthenticated
 }
 
-// func GetAccountKey returns the datastore key for the current account, or an error if no account
+// GetAccountKey returns the datastore key for the current account, or an error if no account
 // has been authenticated for this request
 func GetAccountKey(ctx appengine.Context) (*datastore.Key, error) {
 	acct, err := GetAccount(ctx)
@@ -88,7 +88,7 @@ func GetAccountKey(ctx appengine.Context) (*datastore.Key, error) {
 	return acct.GetKey(ctx), nil
 }
 
-// func GetSession takes an appengine.Context and returns the appropriate session
+// GetSession takes an appengine.Context and returns the appropriate session
 func GetSession(ctx appengine.Context) (session *Session, err error) {
 	reqId := appengine.RequestID(ctx)
 	session, ok := authenticatedSessions[reqId]
@@ -98,7 +98,7 @@ func GetSession(ctx appengine.Context) (session *Session, err error) {
 	return nil, Unauthenticated
 }
 
-// func GetContext returns acct namespaced context for the currently authenticated account
+// GetContext returns acct namespaced context for the currently authenticated account
 // Useful for multi-tenant applications
 func GetContext(req *http.Request) (appengine.Context, error) {
 	ctx := appengine.NewContext(req)
@@ -163,7 +163,7 @@ func storeAuthenticatedRequest(ctx appengine.Context, acct *Account, session *Se
 	authenticatedSessions[reqId] = session
 }
 
-// func ClearAuthenticatedRequest removes a request from the internal authentication mappings to both account and session
+// ClearAuthenticatedRequest removes a request from the internal authentication mappings to both account and session
 // called automatically after a request has been processed by AuthenticatedHandler and AuthenticatedFunc
 func ClearAuthenticatedRequest(req *http.Request) {
 	ctx := appengine.NewContext(req)

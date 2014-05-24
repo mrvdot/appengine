@@ -4,7 +4,7 @@ import (
 	"testing"
 	. "gopkg.in/check.v1"
 
-	utils "github.com/mrvdot/appengine-utils"
+	"github.com/mrvdot/appengine/aeutils"
 	"appengine/aetest"
 	"appengine/datastore"
 )
@@ -35,7 +35,7 @@ func (s *MySuite) SetUpSuite(c *C) {
 		c.Fatal("Failed to create appengine context")
 	}
 	// Create an initial account for testing
-	key, err := utils.Save(ctx, validAccount)
+	key, err := aeutils.Save(ctx, validAccount)
 	c.Assert(err, IsNil)
 	// Do a get to make sure eventual consistency is ready for testing
 	_ = datastore.Get(ctx, key, &Account{})

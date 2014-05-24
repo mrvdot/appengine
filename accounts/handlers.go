@@ -4,7 +4,7 @@ import "net/http"
 
 type authFunc func(http.ResponseWriter, *http.Request, *Account)
 
-// func AuthenticatedFunc wraps a function to ensure the request is authenticated
+// AuthenticatedFunc wraps a function to ensure the request is authenticated
 // before passing through to the wrapped function.
 // Wrapped function can be either http.HandlerFunc or authFunc (receives http.ResponseWriter, *http.Request, *Account)
 func AuthenticatedFunc(fn interface{}) http.HandlerFunc {
@@ -31,7 +31,7 @@ func AuthenticatedFunc(fn interface{}) http.HandlerFunc {
 	}
 }
 
-// func AuthenicatedHandler wraps a handler and ensures everything that passes through it
+// AuthenicatedHandler wraps a handler and ensures everything that passes through it
 // is authenticated. Useful when an entire module/subrouter should be gated by authentication
 func AuthenticatedHandler(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
