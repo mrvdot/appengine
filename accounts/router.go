@@ -30,7 +30,7 @@ func InitRouter(subpath string) {
 	Router = mux.NewRouter()
 	ar := Router.PathPrefix(fmt.Sprintf("/%v", SubrouterPath)).Subrouter()
 	ar.HandleFunc("/new", newAccount).
-		Methods("GET").
+		Methods("POST").
 		Name("CreateAccount")
 	ar.HandleFunc("/authenticate", authenticate).
 		Methods("POST").
