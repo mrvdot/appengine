@@ -7,6 +7,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/mrvdot/appengine/aeutils"
 	"github.com/mrvdot/golang-utils"
 
 	"appengine"
@@ -55,7 +56,7 @@ func newAccount(rw http.ResponseWriter, req *http.Request) {
 		Name:   name,
 		Active: true,
 	}
-	_, err := utils.Save(ctx, acct)
+	_, err := aeutils.Save(ctx, acct)
 	if err != nil {
 		response.Code = 500
 		response.Message = "Error saving new account: " + err.Error()
