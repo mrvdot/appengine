@@ -7,7 +7,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	utils "github.com/mrvdot/appengine-utils"
+	"github.com/mrvdot/golang-utils"
 
 	"appengine"
 )
