@@ -47,13 +47,6 @@ func (s *MySuite) TearDownSuite(c *C) {
 	ctx.Close()
 }
 
-func (s *MySuite) TestGenerateSlug(c *C) {
-	testString := "My awesome string"
-	want := "my-awesome-string"
-	slug := GenerateSlug(testString)
-	c.Assert(slug, Equals, want)
-}
-
 func (s *MySuite) TestGenerateUniqueSlug(c *C) {
 	testString := "My awesome string"
 	want1 := "my-awesome-string"
