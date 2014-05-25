@@ -81,7 +81,9 @@ func authenticate(rw http.ResponseWriter, req *http.Request) {
 		data.Message = err.Error()
 	} else {
 		data.Code = 200
-		data.Data["session"] = session.Key
+		data.Data = map[string]interface{}{
+			"session": session.Key,
+		}
 	}
 	out.Encode(data)
 }
