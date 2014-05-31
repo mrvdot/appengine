@@ -5,6 +5,7 @@ package aeutils
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 
@@ -160,4 +161,20 @@ func getDatastoreKind(kind reflect.Type) (dsKind string) {
 		dsKind = dsKind[li+1:]
 	}
 	return
+}
+
+func CorsHandler(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		rw.Header().Add("Access-Control-Allow-Origin", "*")
+
+		// If we're getting an OPTIONS request, just set the correct headers and send response
+		if req.Method == "OPTIONS" {
+			rw.Header().Add("Access-Control-Allow-Methods", req.Header.Get("Access-Control-Request-Method"))
+			rw.Header().Add("Access-Control-Allow-Headers", req.Header.Get("Access-Control-Request-Headers"))
+			rw.WriteHeader(http.StatusOK)
+			return
+		}
+		handler.ServeHTTP(rw, req)
+	})
 }

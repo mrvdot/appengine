@@ -37,7 +37,7 @@ func InitRouter(subpath string) {
 	ar.HandleFunc("/authenticate", authenticate).
 		Methods("POST").
 		Name("Authenticate")
-	http.Handle(fmt.Sprintf("/%v/", SubrouterPath), Router)
+	http.Handle(fmt.Sprintf("/%v/", SubrouterPath), aeutils.CorsHandler(Router))
 }
 
 // func newAccount creates a new request based on the "account" parameter passed in
