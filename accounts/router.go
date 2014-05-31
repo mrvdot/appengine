@@ -3,6 +3,7 @@ package accounts
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -44,21 +45,32 @@ func newAccount(rw http.ResponseWriter, req *http.Request) {
 	ctx := appengine.NewContext(req)
 	out := json.NewEncoder(rw)
 	response := &utils.ApiResponse{}
+	acct := &Account{}
 	name := req.FormValue("account")
-	ctx.Infof("Creating new account for %v", name)
-	if name == "" {
-		response.Code = 400
-		response.Message = "Account name must be provided"
-		out.Encode(response)
-		return
-	}
-	acct := &Account{
-		Name:   name,
-		Active: true,
+	if name != "" {
+		acct = &Account{
+			Name:   name,
+			Active: true,
+		}
+	} else {
+		dec := json.NewDecoder(req.Body)
+		defer req.Body.Close()
+		err := dec.Decode(acct)
+		if err != nil {
+			if err == io.EOF {
+				response.Code = http.StatusBadRequest
+				response.Message = "Account name must be provided"
+			} else {
+				response.Code = http.StatusInternalServerError
+				response.Message = err.Error()
+			}
+			out.Encode(response)
+			return
+		}
 	}
 	_, err := aeutils.Save(ctx, acct)
 	if err != nil {
-		response.Code = 500
+		response.Code = http.StatusInternalServerError
 		response.Message = "Error saving new account: " + err.Error()
 		out.Encode(response)
 		return
