@@ -7,6 +7,7 @@ type authFunc func(http.ResponseWriter, *http.Request, *Account)
 // AuthenticatedFunc wraps a function to ensure the request is authenticated
 // before passing through to the wrapped function.
 // Wrapped function can be either http.HandlerFunc or authFunc (receives http.ResponseWriter, *http.Request, *Account)
+// BUG - Type switch is panicking way too often right now, need to inspect
 func AuthenticatedFunc(fn interface{}) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		acct, err := AuthenticateRequest(req)

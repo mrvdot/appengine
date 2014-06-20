@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"time"
 
+	"code.google.com/p/go-uuid/uuid"
+
 	"github.com/mrvdot/appengine/aeutils"
 
 	"appengine"
@@ -78,7 +80,7 @@ func (acct *Account) BeforeSave(ctx appengine.Context) {
 		acct.Slug = aeutils.GenerateUniqueSlug(ctx, "Account", acct.Name)
 		acct.Created = time.Now()
 		h := md5.New()
-		io.WriteString(h, fmt.Sprintf("%d%d%d", rand.Int(), rand.Int(), rand.Int()))
+		io.WriteString(h, uuid.New())
 		apiKeyBytes := h.Sum(nil)
 		acct.ApiKey = fmt.Sprintf("%x", apiKeyBytes)
 	}
