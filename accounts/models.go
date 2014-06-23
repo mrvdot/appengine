@@ -59,6 +59,29 @@ type Session struct {
 	TTL         time.Duration  `json:"ttl"`         //How long should this session be valid after LastUsed
 }
 
+type User struct {
+	Username          string         `json:"username"`
+	Email             string         `json:"email"`
+	Password          string         `json:"password" datastore:"-"`
+	EncryptedPassword []byte         `json:"-"`
+	FirstName         string         `json:"firstName"`
+	LastName          string         `json:"lastName"`
+	Account           *datastore.Key `json:"-"`
+}
+
+func (u *User) BeforeSave(ctx appengine.Context) {
+	if u.Password != "" {
+		pw := u.Password
+		u.Password = ""
+		encrypted, err := encrypt([]byte(pw))
+		if err != nil {
+			ctx.Errorf("Error encoding password: %v", err.Error())
+			return
+		}
+		u.EncryptedPassword = encrypted
+	}
+}
+
 // func GetKey returns the datastore key for an account
 func (acct *Account) GetKey(ctx appengine.Context) (key *datastore.Key) {
 	if acct.Key != nil {
