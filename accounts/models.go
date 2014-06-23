@@ -1,6 +1,7 @@
 package accounts
 
 import (
+	"bytes"
 	"crypto/md5"
 	"errors"
 	"fmt"
@@ -31,6 +32,8 @@ var (
 	InvalidApiKey = errors.New("API Key does not match account")
 	// SessionExpired is returned when the specified session has not been used within Session.TTL
 	SessionExpired = errors.New("Session has expired, please reauthenticate")
+	// Invalid password means the password specified for a username doesn't match what we have stored
+	InvalidPassword = errors.New("That password is not valid for this user")
 	// Headers is a string map to header names used for checking account info in request headers
 	Headers = map[string]string{
 		"account": "X-account", // Account slug
@@ -60,6 +63,9 @@ type Session struct {
 }
 
 type User struct {
+	Key               *datastore.Key `json:"-" datastore:"-"`
+	Created           time.Time      `json:"created"`
+	LastLogin         time.Time      `json:"lastLogin"`
 	Username          string         `json:"username"`
 	Email             string         `json:"email"`
 	Password          string         `json:"password" datastore:"-"`
@@ -69,6 +75,7 @@ type User struct {
 	Account           *datastore.Key `json:"-"`
 }
 
+// TODO - validate uniqueness for username
 func (u *User) BeforeSave(ctx appengine.Context) {
 	if u.Password != "" {
 		pw := u.Password
@@ -80,6 +87,48 @@ func (u *User) BeforeSave(ctx appengine.Context) {
 		}
 		u.EncryptedPassword = encrypted
 	}
+	if u.Username == "" {
+		if u.Email != "" {
+			u.Username = u.Email
+		} else {
+			u.Username = fmt.Sprintf("%v%v", u.FirstName, u.LastName)
+		}
+	}
+	// If we've already registered this call within an account, go ahead and assign said account to user
+	if acct, _ := GetAccount(ctx); acct != nil {
+		u.Account = acct.Key
+	}
+}
+
+func (u *User) validatePassword(password string) bool {
+	encrypted, err := encrypt([]byte(password))
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(encrypted, u.EncryptedPassword)
+}
+
+func AuthenticateUser(ctx appengine.Context, username, password string) (*User, error) {
+	// We only check account if it's already set, so don't worry about an error
+	acct, _ := GetAccount(ctx)
+	u := &User{}
+	query := datastore.NewQuery("User").
+		Filter("Username =", username).
+		Limit(1)
+
+	if acct != nil {
+		query.Filter("Account =", acct.Key)
+	}
+	iter := query.Run(ctx)
+
+	_, err := iter.Next(u)
+	if err != nil {
+		return nil, err
+	}
+	if u.validatePassword(password) {
+		return u, nil
+	}
+	return nil, InvalidPassword
 }
 
 // func GetKey returns the datastore key for an account

@@ -45,11 +45,32 @@ func GenerateUniqueSlug(ctx appengine.Context, kind string, s string) (slug stri
 	return slug
 }
 
+// PreSave checks for
+// * Method 'BeforeSave' that receives appengine.Context as it's first parameter
+//   This can be used for any on save actions that need to be performed (generate a slug, store LastUpdated, or create Key field (see below))
+func PreSave(ctx appengine.Context, obj interface{}) error {
+	kind, val := reflect.TypeOf(obj), reflect.ValueOf(obj)
+	str := val
+	if val.Kind().String() == "ptr" {
+		kind, str = kind.Elem(), val.Elem()
+	}
+	if str.Kind().String() != "struct" {
+		return errors.New("Must pass a valid object to struct")
+	}
+	preSave(ctx, val)
+	return nil
+}
+
+// internal presave method that uses values, so we don't have to check twice
+func preSave(ctx appengine.Context, val reflect.Value) {
+	if bsMethod := val.MethodByName("BeforeSave"); bsMethod.IsValid() {
+		bsMethod.Call([]reflect.Value{reflect.ValueOf(ctx)})
+	}
+}
+
 // Save takes an appengine.Context and an struct (or pointer to struct) to save in the datastore
 // Uses reflection to validate obj is able to be saved. Additionally checks for:
 //
-// * Method 'BeforeSave' that receives appengine.Context as it's first parameter
-//   This can be used for any on save actions that need to be performed (generate a slug, store LastUpdated, or create Key field (see below))
 // * Field 'Key' of kind *datastore.Key. If exists and has a valid key, uses that for storing in datastore
 // 	 ** Important. Due to datastore limitations, this field must not actually be stored in the datastore (ie, needs struct tag `datastore:"-")
 // * Field 'ID' of kind int64 to be used as the numeric ID for a datastore key
@@ -68,10 +89,7 @@ func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error
 	if str.Kind().String() != "struct" {
 		return nil, errors.New("Must pass a valid object to struct")
 	}
-	dsKind := getDatastoreKind(kind)
-	if bsMethod := val.MethodByName("BeforeSave"); bsMethod.IsValid() {
-		bsMethod.Call([]reflect.Value{reflect.ValueOf(ctx)})
-	}
+	preSave(ctx, val)
 	//check for key field first
 	keyField := str.FieldByName("Key")
 	if keyField.IsValid() {
@@ -79,6 +97,7 @@ func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error
 		key, _ = keyInterface.(*datastore.Key)
 	}
 	idField := str.FieldByName("ID")
+	dsKind := getDatastoreKind(kind)
 	if key == nil {
 		if idField.IsValid() && idField.Int() != 0 {
 			key = datastore.NewKey(ctx, dsKind, "", idField.Int(), nil)
