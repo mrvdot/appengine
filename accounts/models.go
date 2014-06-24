@@ -50,7 +50,7 @@ type Account struct {
 	Created time.Time      `json:"created"`         //When account was first created
 	Name    string         `json:"name"`            //Name of account
 	Slug    string         `json:"slug"`            //Unique slug
-	ApiKey  string         `json:"apikey"`          //Generated API Key for this account
+	ApiKey  string         `json:"apikey"`          //Generated API Key for this account // TODO - encrypt this
 	Active  bool           `json:"active"`          //True if this account is active
 }
 
@@ -64,6 +64,7 @@ type Session struct {
 
 type User struct {
 	Key               *datastore.Key `json:"-" datastore:"-"`
+	ID                int64          `json:"id"`
 	Created           time.Time      `json:"created"`
 	LastLogin         time.Time      `json:"lastLogin"`
 	Username          string         `json:"username"`
@@ -72,7 +73,8 @@ type User struct {
 	EncryptedPassword []byte         `json:"-"`
 	FirstName         string         `json:"firstName"`
 	LastName          string         `json:"lastName"`
-	Account           *datastore.Key `json:"-"`
+	AccountKey        *datastore.Key `json:"-"`
+	account           *Account
 }
 
 // TODO - validate uniqueness for username
@@ -96,26 +98,55 @@ func (u *User) BeforeSave(ctx appengine.Context) {
 	}
 	// If we've already registered this call within an account, go ahead and assign said account to user
 	if acct, _ := GetAccount(ctx); acct != nil {
-		u.Account = acct.Key
+		u.AccountKey = acct.Key
 	}
 }
 
 func (u *User) validatePassword(password string) bool {
-	encrypted, err := encrypt([]byte(password))
+	decrypted, err := decrypt(u.EncryptedPassword)
 	if err != nil {
 		return false
 	}
-	return bytes.Equal(encrypted, u.EncryptedPassword)
+	return bytes.Equal([]byte(password), decrypted)
 }
 
+func (u *User) Account(ctx appengine.Context) *Account {
+	if u.AccountKey == nil {
+		return nil
+	}
+	if u.account == nil {
+		acct := &Account{}
+		err := datastore.Get(ctx, u.AccountKey, acct)
+		if err != nil {
+			ctx.Errorf("Error retrieving account for user: %v", err.Error())
+			return nil
+		}
+		u.account = acct
+	}
+	return u.account
+}
+
+// Validate a username and password, returning the appropriate user object is one is found
 func AuthenticateUser(ctx appengine.Context, username, password string) (*User, error) {
-	// We only check account if it's already set, so don't worry about an error
-	acct, _ := GetAccount(ctx)
-	u := &User{}
+	u := &User{
+		Username: username,
+		Password: password,
+	}
+	err := u.Authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// Authenticate a user based on the current values for username and password
+func (u *User) Authenticate(ctx appengine.Context) error {
 	query := datastore.NewQuery("User").
-		Filter("Username =", username).
+		Filter("Username =", u.Username).
 		Limit(1)
 
+	// We only check account if it's already set, so don't worry about an error
+	acct, _ := GetAccount(ctx)
 	if acct != nil {
 		query.Filter("Account =", acct.Key)
 	}
@@ -123,12 +154,19 @@ func AuthenticateUser(ctx appengine.Context, username, password string) (*User, 
 
 	_, err := iter.Next(u)
 	if err != nil {
-		return nil, err
+		ctx.Errorf("Error loading user: %v", err.Error())
+		// If it's just a mismatch, keep going, likely just changed structure
+		if _, ok := err.(*datastore.ErrFieldMismatch); !ok {
+			return err
+		}
 	}
-	if u.validatePassword(password) {
-		return u, nil
+
+	if u.validatePassword(u.Password) {
+		u.LastLogin = time.Now()
+		aeutils.Save(ctx, u)
+		return nil
 	}
-	return nil, InvalidPassword
+	return InvalidPassword
 }
 
 // func GetKey returns the datastore key for an account
@@ -161,4 +199,16 @@ func (acct *Account) BeforeSave(ctx appengine.Context) {
 // func Load initializes an account with any necessary calculated values
 func (acct *Account) Load(ctx appengine.Context) {
 	acct.GetKey(ctx)
+}
+
+func (acct *Account) Session(ctx appengine.Context) *Session {
+	if session, err := GetSession(ctx); err == nil {
+		return session
+	}
+	session, err := createSession(ctx, acct)
+	if err != nil {
+		ctx.Errorf("Error creating session: %v", err.Error())
+		return nil
+	}
+	return session
 }

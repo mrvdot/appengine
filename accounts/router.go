@@ -96,6 +96,7 @@ func authenticate(rw http.ResponseWriter, req *http.Request) {
 		data.Data = map[string]interface{}{
 			"session": session.Key,
 		}
+		rw.Header().Set(Headers["session"], session.Key)
 	}
 	out.Encode(data)
 }
