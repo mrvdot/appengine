@@ -22,6 +22,14 @@ func AuthenticateRequest(req *http.Request) (*Account, error) {
 	slug := req.Header.Get(Headers["account"])
 	if slug == "" {
 		sessionKey := req.Header.Get(Headers["session"])
+		if sessionKey == "" {
+			// fall back on cookie if we can
+			sessionCookie, err := req.Cookie(Headers["session"])
+			if err != nil {
+				return nil, Unauthenticated
+			}
+			sessionKey = sessionCookie.Value
+		}
 		acct, _, err := authenticateSession(ctx, sessionKey)
 		if err != nil {
 			return nil, err

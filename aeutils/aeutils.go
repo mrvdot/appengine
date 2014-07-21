@@ -51,11 +51,11 @@ func GenerateUniqueSlug(ctx appengine.Context, kind string, s string) (slug stri
 func PreSave(ctx appengine.Context, obj interface{}) error {
 	kind, val := reflect.TypeOf(obj), reflect.ValueOf(obj)
 	str := val
-	if val.Kind().String() == "ptr" {
+	if val.Kind() == reflect.Ptr {
 		kind, str = kind.Elem(), val.Elem()
 	}
-	if str.Kind().String() != "struct" {
-		return errors.New("Must pass a valid object to struct")
+	if str.Kind() != reflect.Struct {
+		return errors.New(fmt.Sprintf("Must pass a valid object (struct) to aeutils.Save: passed %v", str.Kind()))
 	}
 	preSave(ctx, val)
 	return nil
@@ -83,11 +83,11 @@ func preSave(ctx appengine.Context, val reflect.Value) {
 func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error) {
 	kind, val := reflect.TypeOf(obj), reflect.ValueOf(obj)
 	str := val
-	if val.Kind().String() == "ptr" {
+	if val.Kind() == reflect.Ptr {
 		kind, str = kind.Elem(), val.Elem()
 	}
-	if str.Kind().String() != "struct" {
-		return nil, errors.New("Must pass a valid object to struct")
+	if str.Kind() != reflect.Struct {
+		return nil, errors.New(fmt.Sprintf("Must pass a valid object (struct) to aeutils.Save: passed %v", str.Kind()))
 	}
 	preSave(ctx, val)
 	//check for key field first

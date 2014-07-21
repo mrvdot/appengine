@@ -194,6 +194,9 @@ func (acct *Account) BeforeSave(ctx appengine.Context) {
 		apiKeyBytes := h.Sum(nil)
 		acct.ApiKey = fmt.Sprintf("%x", apiKeyBytes)
 	}
+	if acct.Key == nil {
+		acct.GetKey(ctx)
+	}
 }
 
 // func Load initializes an account with any necessary calculated values
