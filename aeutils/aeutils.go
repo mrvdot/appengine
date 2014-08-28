@@ -99,12 +99,12 @@ func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error
 	idField := str.FieldByName("ID")
 	dsKind := getDatastoreKind(kind)
 	if key == nil {
-		if idField.IsValid() && idField.Int() != 0 {
+		if idField.IsValid() && isInt(kind.Kind()) && idField.Int() != 0 {
 			key = datastore.NewKey(ctx, dsKind, "", idField.Int(), nil)
 		} else {
 			newId, _, err := datastore.AllocateIDs(ctx, dsKind, nil, 1)
 			if err == nil {
-				if idField.IsValid() {
+				if idField.IsValid() && isInt(kind.Kind()) {
 					idField.SetInt(newId)
 				}
 				key = datastore.NewKey(ctx, dsKind, "", newId, nil)
@@ -121,7 +121,7 @@ func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error
 		if keyField.IsValid() {
 			keyField.Set(reflect.ValueOf(key))
 		}
-		if idField.IsValid() {
+		if idField.IsValid() && isInt(idField.Kind()) {
 			idField.SetInt(key.IntID())
 		}
 		if asMethod := val.MethodByName("AfterSave"); asMethod.IsValid() {
@@ -129,6 +129,15 @@ func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error
 		}
 	}
 	return
+}
+
+func isInt(kind reflect.Kind) bool {
+	switch kind {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return true
+	default:
+		return false
+	}
 }
 
 // ExistsInDatastore takes an appengine Context and an interface checks if that interface already exists in datastore
