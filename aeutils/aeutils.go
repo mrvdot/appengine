@@ -99,17 +99,16 @@ func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error
 	idField := str.FieldByName("ID")
 	dsKind := getDatastoreKind(kind)
 	if key == nil {
-		if idField.IsValid() && isInt(kind.Kind()) && idField.Int() != 0 {
+		if idField.IsValid() && isInt(idField.Kind()) && idField.Int() != 0 {
 			key = datastore.NewKey(ctx, dsKind, "", idField.Int(), nil)
 		} else {
 			newId, _, err := datastore.AllocateIDs(ctx, dsKind, nil, 1)
 			if err == nil {
-				if idField.IsValid() && isInt(kind.Kind()) {
+				if idField.IsValid() && isInt(idField.Kind()) {
 					idField.SetInt(newId)
 				}
 				key = datastore.NewKey(ctx, dsKind, "", newId, nil)
 			} else {
-				ctx.Errorf("Failed to allocate new ID for this user: %v", err.Error())
 				key = datastore.NewIncompleteKey(ctx, dsKind, nil)
 			}
 		}

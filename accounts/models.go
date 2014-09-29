@@ -78,6 +78,8 @@ type User struct {
 }
 
 // TODO - validate uniqueness for username
+// TODO - Move to PropertyLoadSaver for encryption/decryption
+// TODO - Utilize MarshalJSON to remove password
 func (u *User) BeforeSave(ctx appengine.Context) {
 	if u.Password != "" {
 		pw := u.Password
@@ -99,6 +101,9 @@ func (u *User) BeforeSave(ctx appengine.Context) {
 	// If we've already registered this call within an account, go ahead and assign said account to user
 	if acct, _ := GetAccount(ctx); acct != nil {
 		u.AccountKey = acct.Key
+	}
+	if u.Created.IsZero() {
+		u.Created = time.Now()
 	}
 }
 
