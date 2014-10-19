@@ -9,9 +9,15 @@ import (
 	"strings"
 
 	"github.com/mrvdot/golang-utils"
+	"github.com/qedus/nds"
 
 	"appengine"
 	"appengine/datastore"
+)
+
+var (
+	// Set to true to use NDS package for Put/Get methods
+	UseNDS = false
 )
 
 // GenerateUniqueSlug generates a slug that's unique within the datastore for this type
@@ -113,7 +119,11 @@ func Save(ctx appengine.Context, obj interface{}) (key *datastore.Key, err error
 			}
 		}
 	}
-	key, err = datastore.Put(ctx, key, obj)
+	if UseNDS {
+		key, err = nds.Put(ctx, key, obj)
+	} else {
+		key, err = datastore.Put(ctx, key, obj)
+	}
 	if err != nil {
 		ctx.Errorf("[aeutils/Save]: %v", err.Error())
 	} else {
@@ -171,7 +181,12 @@ func ExistsInDatastore(ctx appengine.Context, obj interface{}) bool {
 	if key == nil {
 		return false
 	}
-	err := datastore.Get(ctx, key, obj)
+	var err error
+	if UseNDS {
+		err = nds.Get(ctx, key, obj)
+	} else {
+		err = datastore.Get(ctx, key, obj)
+	}
 	if err != nil {
 		return false
 	}
