@@ -21,14 +21,9 @@ func AuthenticateRequest(req *http.Request) (*Account, error) {
 	ctx := appengine.NewContext(req)
 	slug := req.Header.Get(Headers["account"])
 	if slug == "" {
-		sessionKey := req.Header.Get(Headers["session"])
+		sessionKey := sessionKeyFromRequest(req)
 		if sessionKey == "" {
-			// fall back on cookie if we can
-			sessionCookie, err := req.Cookie(Headers["session"])
-			if err != nil {
-				return nil, Unauthenticated
-			}
-			sessionKey = sessionCookie.Value
+			return nil, Unauthenticated
 		}
 		acct, _, err := authenticateSession(ctx, sessionKey)
 		if err != nil {
@@ -74,6 +69,21 @@ func authenticateSession(ctx appengine.Context, sessionKey string) (acct *Accoun
 	session.LastUsed = now
 	storeAuthenticatedRequest(ctx, acct, session)
 	return acct, session, nil
+}
+
+// Get Session key from request, checking Headers first, then Cookies
+func sessionKeyFromRequest(req *http.Request) (sessionKey string) {
+	headerName := Headers["session"]
+	sessionKey = req.Header.Get(headerName)
+	if sessionKey == "" {
+		// fall back on cookie if we can
+		sessionCookie, err := req.Cookie(headerName)
+		if err != nil {
+			return
+		}
+		sessionKey = sessionCookie.Value
+	}
+	return
 }
 
 // GetAccount returns the currently authenticated account, or an error if no account
@@ -178,6 +188,29 @@ func ClearAuthenticatedRequest(req *http.Request) {
 	reqId := appengine.RequestID(ctx)
 	delete(authenticatedAccounts, reqId)
 	delete(authenticatedSessions, reqId)
+}
+
+// Clears the session, optionally specified by a key, otherwise pulled from the current request
+// Returns a bool for whether or not that session existed
+func ClearSession(req *http.Request, sessionKey string) bool {
+	ctx := appengine.NewContext(req)
+	if sessionKey == "" {
+		sessionKey = sessionKeyFromRequest(req)
+		if sessionKey == "" {
+			return false
+		}
+	}
+	memcache.Delete(ctx, "session-"+sessionKey)
+	if session, ok := sessions[sessionKey]; ok {
+		delete(sessions, sessionKey)
+
+		if _, ok = sessionToAccount[session]; ok {
+			delete(sessionToAccount, session)
+		}
+
+		return true
+	}
+	return false
 }
 
 func getAccountFromSession(ctx appengine.Context, session *Session) (*Account, error) {
