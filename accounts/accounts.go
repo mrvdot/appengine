@@ -14,10 +14,23 @@ import (
 	"appengine/memcache"
 )
 
+var (
+	mockAccount *Account
+)
+
+// Mock the currently authenticated account
+// Useful for testing and debugging
+func MockAccount(acct *Account) {
+	mockAccount = acct
+}
+
 // AuthenticateRequest takes an http.Request and validates it against existing accounts and sessions
 // Checks first for an account slug, then falls back on acct session key if slug is not present
 // Returns an account (if valid) or error if unable to find acct matching account
 func AuthenticateRequest(req *http.Request) (*Account, error) {
+	if mockAccount != nil {
+		return mockAccount, nil
+	}
 	ctx := appengine.NewContext(req)
 	slug := req.Header.Get(Headers["account"])
 	if slug == "" {
@@ -89,6 +102,9 @@ func sessionKeyFromRequest(req *http.Request) (sessionKey string) {
 // GetAccount returns the currently authenticated account, or an error if no account
 // has been authenticated for this request
 func GetAccount(ctx appengine.Context) (*Account, error) {
+	if mockAccount != nil {
+		return mockAccount, nil
+	}
 	reqId := appengine.RequestID(ctx)
 	if acct, ok := authenticatedAccounts[reqId]; ok {
 		return acct, nil

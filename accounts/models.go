@@ -36,9 +36,11 @@ var (
 	InvalidPassword = errors.New("That password is not valid for this user")
 	// Headers is a string map to header names used for checking account info in request headers
 	Headers = map[string]string{
-		"account": "X-account", // Account slug
-		"key":     "X-key",     // Account key
-		"session": "X-session", // Session key
+		"account":  "X-account",  // Account slug
+		"key":      "X-key",      // Account key
+		"session":  "X-session",  // Session key
+		"username": "X-username", // Username (for auth by user instead of account)
+		"password": "X-password", // Password (for auth by user)
 	}
 	// SessionTTL is a time.Duration for how long a session should remain valid since LastUsed
 	SessionTTL = time.Duration(3 * time.Hour)
@@ -159,7 +161,9 @@ func (u *User) Authenticate(ctx appengine.Context) error {
 
 	_, err := iter.Next(u)
 	if err != nil {
-		ctx.Errorf("Error loading user: %v", err.Error())
+		if err != datastore.Done {
+			ctx.Errorf("Error loading user: %v", err.Error())
+		}
 		// If it's just a mismatch, keep going, likely just changed structure
 		if _, ok := err.(*datastore.ErrFieldMismatch); !ok {
 			return err
