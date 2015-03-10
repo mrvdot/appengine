@@ -85,7 +85,7 @@ func authenticate(rw http.ResponseWriter, req *http.Request) {
 	ctx := appengine.NewContext(req)
 	out := json.NewEncoder(rw)
 	data := &utils.ApiResponse{}
-	_, err := AuthenticateRequest(req)
+	_, err := AuthenticateRequest(req, rw)
 	session, err := GetSession(ctx)
 	if err != nil {
 		ctx.Errorf(err.Error())
@@ -94,9 +94,8 @@ func authenticate(rw http.ResponseWriter, req *http.Request) {
 	} else {
 		data.Code = 200
 		data.Data = map[string]interface{}{
-			"session": session.Key,
+			"session": session.Key, // Probably not needed anymore, kept for backwards compatibility
 		}
-		rw.Header().Set(Headers["session"], session.Key)
 	}
 	out.Encode(data)
 }

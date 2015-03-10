@@ -4,9 +4,12 @@ package accounts
 
 import (
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"appengine"
@@ -27,13 +30,29 @@ func MockAccount(acct *Account) {
 // AuthenticateRequest takes an http.Request and validates it against existing accounts and sessions
 // Checks first for an account slug, then falls back on acct session key if slug is not present
 // Returns an account (if valid) or error if unable to find acct matching account
-func AuthenticateRequest(req *http.Request) (*Account, error) {
+func AuthenticateRequest(req *http.Request, rw http.ResponseWriter) (acct *Account, err error) {
 	if mockAccount != nil {
 		return mockAccount, nil
 	}
 	ctx := appengine.NewContext(req)
-	slug := req.Header.Get(Headers["account"])
-	if slug == "" {
+
+	if slug := req.Header.Get(Headers["account"]); slug != "" {
+		apiKey := req.Header.Get(Headers["key"])
+		acct, err = authenticateAccount(ctx, slug, apiKey)
+		if err == nil {
+			session, _ := GetSession(ctx)
+			sendSession(req, rw, session)
+		}
+		return
+	} else if username := req.Header.Get(Headers["slug"]); username != "" {
+		password := req.Header.Get(Headers["password"])
+		acct, err = authenticateAccountByUser(ctx, username, password)
+		if err == nil {
+			session, _ := GetSession(ctx)
+			sendSession(req, rw, session)
+		}
+		return
+	} else {
 		sessionKey := sessionKeyFromRequest(req)
 		if sessionKey == "" {
 			return nil, Unauthenticated
@@ -44,8 +63,6 @@ func AuthenticateRequest(req *http.Request) (*Account, error) {
 		}
 		return acct, nil
 	}
-	apiKey := req.Header.Get(Headers["key"])
-	return authenticateAccount(ctx, slug, apiKey)
 }
 
 // authenticateAccount takes acct accountId and key, authenticates it,
@@ -55,6 +72,27 @@ func authenticateAccount(ctx appengine.Context, accountSlug, accountKey string) 
 	acct, err := getAccountFromSlug(ctx, accountSlug, accountKey)
 	if err != nil {
 		return nil, err
+	}
+
+	_, err = createSession(ctx, acct)
+	if err != nil {
+		// If we fail to create session, log it, but don't completely bail on authenticating account
+		ctx.Warningf("Error creating session for account: %v", err.Error())
+	}
+	return acct, nil
+}
+
+// authenticateAccountByUser looks for a user account matching username and password
+// and if finds it, logs in the related account and returns it
+func authenticateAccountByUser(ctx appengine.Context, username, password string) (*Account, error) {
+	user, err := AuthenticateUser(ctx, username, password)
+	if err != nil {
+		return nil, err
+	}
+
+	acct := user.Account(ctx)
+	if acct == nil {
+		return nil, errors.New("Orphaned user object has no account")
 	}
 
 	_, err = createSession(ctx, acct)
@@ -173,6 +211,32 @@ func storeSession(ctx appengine.Context, session *Session, acct *Account) {
 	}
 }
 
+func sendSession(req *http.Request, rw http.ResponseWriter, session *Session) {
+	sessionHeader := Headers["session"]
+	sessionKey := session.Key
+
+	var domain string
+	if reqUrl, err := url.Parse(req.Header.Get("Origin")); err != nil {
+		domain = reqUrl.Host
+		// If domain includes port, slice it off
+		if strings.Contains(domain, ":") {
+			domainParts := strings.Split(domain, ":")
+			domain = domainParts[0]
+		}
+	}
+	cookie := &http.Cookie{
+		Name:   sessionHeader,
+		Value:  sessionKey,
+		Domain: domain,
+		Path:   "/",
+	}
+
+	rw.Header().Set(sessionHeader, sessionKey)
+	rw.Header().Add("Access-Control-Expose-Headers", sessionHeader)
+
+	http.SetCookie(rw, cookie)
+}
+
 func createSession(ctx appengine.Context, acct *Account) (*Session, error) {
 	now := time.Now()
 	h := md5.New()
@@ -189,6 +253,10 @@ func createSession(ctx appengine.Context, acct *Account) (*Session, error) {
 	storeSession(ctx, session, acct)
 	storeAuthenticatedRequest(ctx, acct, session)
 	return session, nil
+}
+
+func CreateSession(ctx appengine.Context, acct *Account) (*Session, error) {
+	return createSession(ctx, acct)
 }
 
 func storeAuthenticatedRequest(ctx appengine.Context, acct *Account, session *Session) {
