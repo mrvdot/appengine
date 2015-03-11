@@ -4,23 +4,58 @@ package accounts
 
 import (
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
+
+	"github.com/mrvdot/appengine/aeutils"
+	"github.com/qedus/nds"
 
 	"appengine"
 	"appengine/datastore"
 	"appengine/memcache"
 )
 
+var (
+	mockAccount *Account
+)
+
+// Mock the currently authenticated account
+// Useful for testing and debugging
+func MockAccount(acct *Account) {
+	mockAccount = acct
+}
+
 // AuthenticateRequest takes an http.Request and validates it against existing accounts and sessions
 // Checks first for an account slug, then falls back on acct session key if slug is not present
 // Returns an account (if valid) or error if unable to find acct matching account
-func AuthenticateRequest(req *http.Request) (*Account, error) {
+func AuthenticateRequest(req *http.Request, rw http.ResponseWriter) (acct *Account, err error) {
+	if mockAccount != nil {
+		return mockAccount, nil
+	}
 	ctx := appengine.NewContext(req)
-	slug := req.Header.Get(Headers["account"])
-	if slug == "" {
+
+	if slug := req.Header.Get(Headers["account"]); slug != "" {
+		apiKey := req.Header.Get(Headers["key"])
+		acct, err = authenticateAccount(ctx, slug, apiKey)
+		if err == nil {
+			session, _ := GetSession(ctx)
+			sendSession(req, rw, session)
+		}
+		return
+	} else if username := req.Header.Get(Headers["slug"]); username != "" {
+		password := req.Header.Get(Headers["password"])
+		acct, err = authenticateAccountByUser(ctx, username, password)
+		if err == nil {
+			session, _ := GetSession(ctx)
+			sendSession(req, rw, session)
+		}
+		return
+	} else {
 		sessionKey := sessionKeyFromRequest(req)
 		if sessionKey == "" {
 			return nil, Unauthenticated
@@ -31,8 +66,6 @@ func AuthenticateRequest(req *http.Request) (*Account, error) {
 		}
 		return acct, nil
 	}
-	apiKey := req.Header.Get(Headers["key"])
-	return authenticateAccount(ctx, slug, apiKey)
 }
 
 // authenticateAccount takes acct accountId and key, authenticates it,
@@ -44,7 +77,28 @@ func authenticateAccount(ctx appengine.Context, accountSlug, accountKey string) 
 		return nil, err
 	}
 
-	_, err = createSession(ctx, acct)
+	_, err = createSession(ctx, acct, nil)
+	if err != nil {
+		// If we fail to create session, log it, but don't completely bail on authenticating account
+		ctx.Warningf("Error creating session for account: %v", err.Error())
+	}
+	return acct, nil
+}
+
+// authenticateAccountByUser looks for a user account matching username and password
+// and if finds it, logs in the related account and returns it
+func authenticateAccountByUser(ctx appengine.Context, username, password string) (*Account, error) {
+	user, err := AuthenticateUser(ctx, username, password)
+	if err != nil {
+		return nil, err
+	}
+
+	acct := user.Account(ctx)
+	if acct == nil {
+		return nil, errors.New("Orphaned user object has no account")
+	}
+
+	_, err = createSession(ctx, acct, user)
 	if err != nil {
 		// If we fail to create session, log it, but don't completely bail on authenticating account
 		ctx.Warningf("Error creating session for account: %v", err.Error())
@@ -60,14 +114,15 @@ func authenticateSession(ctx appengine.Context, sessionKey string) (acct *Accoun
 	}
 	acct, err = getAccountFromSession(ctx, session)
 	if err != nil {
-		return nil, nil, Unauthenticated
 	}
 	now := time.Now()
 	if now.After(session.LastUsed.Add(session.TTL)) {
 		return nil, nil, SessionExpired
 	}
+	// We don't care if this is nil, just means we're not using users here
+	user, _ := getUserFromSession(ctx, session)
 	session.LastUsed = now
-	storeAuthenticatedRequest(ctx, acct, session)
+	storeAuthenticatedRequest(ctx, acct, session, user)
 	return acct, session, nil
 }
 
@@ -89,9 +144,20 @@ func sessionKeyFromRequest(req *http.Request) (sessionKey string) {
 // GetAccount returns the currently authenticated account, or an error if no account
 // has been authenticated for this request
 func GetAccount(ctx appengine.Context) (*Account, error) {
+	if mockAccount != nil {
+		return mockAccount, nil
+	}
 	reqId := appengine.RequestID(ctx)
 	if acct, ok := authenticatedAccounts[reqId]; ok {
 		return acct, nil
+	}
+	return nil, Unauthenticated
+}
+
+func GetUser(ctx appengine.Context) (*User, error) {
+	reqId := appengine.RequestID(ctx)
+	if user, ok := authenticatedUsers[reqId]; ok {
+		return user, nil
 	}
 	return nil, Unauthenticated
 }
@@ -143,10 +209,11 @@ func getSession(ctx appengine.Context, key string) (*Session, error) {
 	return session, nil
 }
 
-func storeSession(ctx appengine.Context, session *Session, acct *Account) {
+func storeSession(ctx appengine.Context, session *Session, acct *Account, user *User) {
 	key := session.Key
 	sessions[key] = session
 	sessionToAccount[session] = acct
+	sessionToUser[session] = user
 	i := &memcache.Item{
 		Key:    "session-" + session.Key,
 		Object: session,
@@ -157,7 +224,37 @@ func storeSession(ctx appengine.Context, session *Session, acct *Account) {
 	}
 }
 
-func createSession(ctx appengine.Context, acct *Account) (*Session, error) {
+func sendSession(req *http.Request, rw http.ResponseWriter, session *Session) {
+	sessionHeader := Headers["session"]
+	sessionKey := session.Key
+
+	var domain string
+	if reqUrl, err := url.Parse(req.Header.Get("Origin")); err != nil {
+		domain = reqUrl.Host
+		// If domain includes port, slice it off
+		if strings.Contains(domain, ":") {
+			domainParts := strings.Split(domain, ":")
+			domain = domainParts[0]
+		}
+	}
+	cookie := &http.Cookie{
+		Name:   sessionHeader,
+		Value:  sessionKey,
+		Domain: domain,
+		Path:   "/",
+	}
+
+	rw.Header().Set(sessionHeader, sessionKey)
+	rw.Header().Add("Access-Control-Expose-Headers", sessionHeader)
+
+	http.SetCookie(rw, cookie)
+}
+
+func SendSession(req *http.Request, rw http.ResponseWriter, session *Session) {
+	sendSession(req, rw, session)
+}
+
+func createSession(ctx appengine.Context, acct *Account, user *User) (*Session, error) {
 	now := time.Now()
 	h := md5.New()
 	io.WriteString(h, fmt.Sprintf("%v-%d", acct.Slug, now.UnixNano()))
@@ -170,15 +267,23 @@ func createSession(ctx appengine.Context, acct *Account) (*Session, error) {
 		LastUsed:    now,
 		TTL:         SessionTTL,
 	}
-	storeSession(ctx, session, acct)
-	storeAuthenticatedRequest(ctx, acct, session)
+	if user != nil {
+		session.User = user.GetKey(ctx)
+	}
+	storeSession(ctx, session, acct, user)
+	storeAuthenticatedRequest(ctx, acct, session, user)
 	return session, nil
 }
 
-func storeAuthenticatedRequest(ctx appengine.Context, acct *Account, session *Session) {
+func CreateSession(ctx appengine.Context, acct *Account, user *User) (*Session, error) {
+	return createSession(ctx, acct, user)
+}
+
+func storeAuthenticatedRequest(ctx appengine.Context, acct *Account, session *Session, user *User) {
 	reqId := appengine.RequestID(ctx)
 	authenticatedAccounts[reqId] = acct
 	authenticatedSessions[reqId] = session
+	authenticatedUsers[reqId] = user
 }
 
 // ClearAuthenticatedRequest removes a request from the internal authentication mappings to both account and session
@@ -188,6 +293,7 @@ func ClearAuthenticatedRequest(req *http.Request) {
 	reqId := appengine.RequestID(ctx)
 	delete(authenticatedAccounts, reqId)
 	delete(authenticatedSessions, reqId)
+	delete(authenticatedUsers, reqId)
 }
 
 // Clears the session, optionally specified by a key, otherwise pulled from the current request
@@ -213,18 +319,22 @@ func ClearSession(req *http.Request, sessionKey string) bool {
 	return false
 }
 
-func getAccountFromSession(ctx appengine.Context, session *Session) (*Account, error) {
+func getAccountFromSession(ctx appengine.Context, session *Session) (acct *Account, err error) {
 	if acct, ok := sessionToAccount[session]; ok {
 		return acct, nil
 	}
 	acctKey := session.Account
-	acct := &Account{}
-	err := datastore.Get(ctx, acctKey, acct)
+	acct = &Account{}
+	if aeutils.UseNDS {
+		err = nds.Get(ctx, acctKey, acct)
+	} else {
+		err = datastore.Get(ctx, acctKey, acct)
+	}
 	if err != nil {
 		return nil, NoSuchSession
 	}
 	acct.Load(ctx)
-	return acct, nil
+	return
 }
 
 func getAccountFromSlug(ctx appengine.Context, slug string, apiKey string) (*Account, error) {
@@ -243,4 +353,21 @@ func getAccountFromSlug(ctx appengine.Context, slug string, apiKey string) (*Acc
 	}
 	acct.Load(ctx)
 	return acct, nil
+}
+
+func getUserFromSession(ctx appengine.Context, session *Session) (user *User, err error) {
+	if user, ok := sessionToUser[session]; ok {
+		return user, nil
+	}
+	userKey := session.User
+	user = &User{}
+	if aeutils.UseNDS {
+		err = nds.Get(ctx, userKey, user)
+	} else {
+		err = datastore.Get(ctx, userKey, user)
+	}
+	if err != nil {
+		return nil, NoSuchSession
+	}
+	return
 }
