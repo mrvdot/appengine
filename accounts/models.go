@@ -12,6 +12,7 @@ import (
 	"code.google.com/p/go-uuid/uuid"
 
 	"github.com/mrvdot/appengine/aeutils"
+	"github.com/qedus/nds"
 
 	"appengine"
 	"appengine/datastore"
@@ -20,7 +21,9 @@ import (
 var (
 	authenticatedAccounts = map[string]*Account{}
 	authenticatedSessions = map[string]*Session{}
+	authenticatedUsers    = map[string]*User{}
 	sessionToAccount      = map[*Session]*Account{}
+	sessionToUser         = map[*Session]*User{}
 	sessions              = map[string]*Session{}
 	// Unauthenticated is returned when a request was not successfully authenticated
 	Unauthenticated = errors.New("No account has been authenticated for this request")
@@ -49,11 +52,12 @@ var (
 //type Account holds the basic information for an attached account
 type Account struct {
 	Key     *datastore.Key `json:"-" datastore:"-"` //Locally cached key
-	Created time.Time      `json:"created"`         //When account was first created
-	Name    string         `json:"name"`            //Name of account
-	Slug    string         `json:"slug"`            //Unique slug
-	ApiKey  string         `json:"apikey"`          //Generated API Key for this account // TODO - encrypt this
-	Active  bool           `json:"active"`          //True if this account is active
+	ID      string         `json:"id"`
+	Created time.Time      `json:"created"` //When account was first created
+	Name    string         `json:"name"`    //Name of account
+	Slug    string         `json:"slug"`    //Unique slug
+	ApiKey  string         `json:"apikey"`  //Generated API Key for this account // TODO - encrypt this
+	Active  bool           `json:"active"`  //True if this account is active
 }
 
 type Session struct {
@@ -123,7 +127,12 @@ func (u *User) Account(ctx appengine.Context) *Account {
 	}
 	if u.account == nil {
 		acct := &Account{}
-		err := datastore.Get(ctx, u.AccountKey, acct)
+		var err error
+		if aeutils.UseNDS {
+			err = nds.Get(ctx, u.AccountKey, acct)
+		} else {
+			err = datastore.Get(ctx, u.AccountKey, acct)
+		}
 		if err != nil {
 			ctx.Errorf("Error retrieving account for user: %v", err.Error())
 			return nil
@@ -179,6 +188,7 @@ func (u *User) Authenticate(ctx appengine.Context) error {
 }
 
 // func GetKey returns the datastore key for an account
+// [TODO] - Want to migrate this to use ID's for key, not slug
 func (acct *Account) GetKey(ctx appengine.Context) (key *datastore.Key) {
 	if acct.Key != nil {
 		key = acct.Key
@@ -192,6 +202,9 @@ func (acct *Account) GetKey(ctx appengine.Context) (key *datastore.Key) {
 // func BeforeSave is called as part of aeutils.Save prior to storing in the datastore
 // serves to set a default account name and slug, as well as ApiKey and Created timestamp
 func (acct *Account) BeforeSave(ctx appengine.Context) {
+	if acct.ID == "" {
+		acct.ID = uuid.New()
+	}
 	if acct.Name == "" {
 		acct.Name = fmt.Sprintf("Account-%v", rand.Int())
 	}
@@ -217,7 +230,7 @@ func (acct *Account) Session(ctx appengine.Context) *Session {
 	if session, err := GetSession(ctx); err == nil {
 		return session
 	}
-	session, err := createSession(ctx, acct)
+	session, err := createSession(ctx, acct, nil)
 	if err != nil {
 		ctx.Errorf("Error creating session: %v", err.Error())
 		return nil
