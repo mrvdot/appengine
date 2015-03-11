@@ -266,6 +266,9 @@ func createSession(ctx appengine.Context, acct *Account, user *User) (*Session, 
 		LastUsed:    now,
 		TTL:         SessionTTL,
 	}
+	if user != nil {
+		session.User = user.GetKey(ctx)
+	}
 	storeSession(ctx, session, acct, user)
 	storeAuthenticatedRequest(ctx, acct, session, user)
 	return session, nil
@@ -349,4 +352,21 @@ func getAccountFromSlug(ctx appengine.Context, slug string, apiKey string) (*Acc
 	}
 	acct.Load(ctx)
 	return acct, nil
+}
+
+func getUserFromSession(ctx appengine.Context, session *Session) (user *User, err error) {
+	if user, ok := sessionToUser[session]; ok {
+		return user, nil
+	}
+	userKey := session.User
+	user = &User{}
+	if aeutils.UseNDS {
+		err = nds.Get(ctx, userKey, user)
+	} else {
+		err = datastore.Get(ctx, userKey, user)
+	}
+	if err != nil {
+		return nil, NoSuchSession
+	}
+	return
 }

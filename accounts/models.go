@@ -61,8 +61,9 @@ type Account struct {
 }
 
 type Session struct {
-	Key         string         `json:"key"`         //Session Key provided for identification
-	Account     *datastore.Key `json:"-"`           //Key to actual account
+	Key         string         `json:"key"` //Session Key provided for identification
+	Account     *datastore.Key `json:"-"`   //Key to actual account
+	User        *datastore.Key `json:"-"`
 	Initialized time.Time      `json:"initialized"` //Time session was first created
 	LastUsed    time.Time      `json:"lastUsed"`    //Last time session was used
 	TTL         time.Duration  `json:"ttl"`         //How long should this session be valid after LastUsed
@@ -111,6 +112,18 @@ func (u *User) BeforeSave(ctx appengine.Context) {
 	if u.Created.IsZero() {
 		u.Created = time.Now()
 	}
+}
+
+func (u *User) GetKey(ctx appengine.Context) (key *datastore.Key) {
+	if u.Key != nil {
+		key = u.Key
+	} else if u.ID == 0 {
+		key = datastore.NewIncompleteKey(ctx, "User", nil)
+	} else {
+		key = datastore.NewKey(ctx, "User", "", u.ID, nil)
+		u.Key = key
+	}
+	return
 }
 
 func (u *User) validatePassword(password string) bool {
