@@ -114,14 +114,15 @@ func authenticateSession(ctx appengine.Context, sessionKey string) (acct *Accoun
 	}
 	acct, err = getAccountFromSession(ctx, session)
 	if err != nil {
-		return nil, nil, Unauthenticated
 	}
 	now := time.Now()
 	if now.After(session.LastUsed.Add(session.TTL)) {
 		return nil, nil, SessionExpired
 	}
+	// We don't care if this is nil, just means we're not using users here
+	user, _ := getUserFromSession(ctx, session)
 	session.LastUsed = now
-	storeAuthenticatedRequest(ctx, acct, session, nil)
+	storeAuthenticatedRequest(ctx, acct, session, user)
 	return acct, session, nil
 }
 
